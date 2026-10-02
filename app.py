@@ -1,5 +1,7 @@
 import base64
+import html
 import io
+import os
 import re
 import unicodedata
 import zipfile
@@ -16,15 +18,33 @@ import streamlit as st
 # ============================================================
 
 APP_TITLE = "Cola Eleitoral 2026 SP"
-YEAR = 2026
-UF = "SP"
+
+# Datas, estado e rodada em um único lugar (PRD §41 e §42). Para um eventual
+# segundo turno, muda-se apenas "round" para 2 e só os cargos com segunda
+# volta programada entram na cola.
+ELECTION_CONFIG = {
+    "year": 2026,
+    "first_round": "2026-10-04",
+    "second_round": "2026-10-25",
+    "state": "SP",
+    "round": 1,
+}
+
+YEAR = ELECTION_CONFIG["year"]
+UF = ELECTION_CONFIG["state"]
+ROUND_LABEL = f'{ELECTION_CONFIG["round"]}º turno'
 
 TSE_DATASET_URL = (
     "https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/"
     "consulta_cand_2026.zip"
 )
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+# ``COLA_DATA_DIR`` permite aos testes apontarem para uma base de fixture
+# pequena em vez da pasta real de dados.
+DATA_DIR = Path(
+    os.environ.get("COLA_DATA_DIR")
+    or Path(__file__).resolve().parent / "data"
+)
 LOCAL_CSV = DATA_DIR / "candidatos_2026.csv"
 
 BALLOT_ORDER = [
@@ -34,6 +54,7 @@ BALLOT_ORDER = [
         "cargo_terms": ["DEPUTADO FEDERAL"],
         "digits": 4,
         "uf": "SP",
+        "rounds": [1],
     },
     {
         "key": "deputado_estadual",
@@ -41,6 +62,7 @@ BALLOT_ORDER = [
         "cargo_terms": ["DEPUTADO ESTADUAL"],
         "digits": 5,
         "uf": "SP",
+        "rounds": [1],
     },
     {
         "key": "senador_1",
@@ -48,6 +70,7 @@ BALLOT_ORDER = [
         "cargo_terms": ["SENADOR"],
         "digits": 3,
         "uf": "SP",
+        "rounds": [1],
     },
     {
         "key": "senador_2",
@@ -55,6 +78,7 @@ BALLOT_ORDER = [
         "cargo_terms": ["SENADOR"],
         "digits": 3,
         "uf": "SP",
+        "rounds": [1],
     },
     {
         "key": "governador",
@@ -62,6 +86,7 @@ BALLOT_ORDER = [
         "cargo_terms": ["GOVERNADOR"],
         "digits": 2,
         "uf": "SP",
+        "rounds": [1, 2],
     },
     {
         "key": "presidente",
@@ -69,7 +94,16 @@ BALLOT_ORDER = [
         "cargo_terms": ["PRESIDENTE"],
         "digits": 2,
         "uf": "BR",
+        "rounds": [1, 2],
     },
+]
+
+# Cargos ativos na rodada configurada (PRD §41): no segundo turno só entram
+# os cargos submetidos à segunda volta.
+BALLOT_ORDER_ACTIVE = [
+    item
+    for item in BALLOT_ORDER
+    if ELECTION_CONFIG["round"] in item["rounds"]
 ]
 
 COLUMN_ALIASES = {
@@ -676,22 +710,27 @@ def base_danificada(frame: pd.DataFrame) -> bool:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def load_photo_index() -> dict[str, str]:
+def load_photo_index(directory: str) -> dict[str, str]:
     """Mapeia o sequencial do candidato para a foto oficial do TSE.
 
     As fotos vêm no pacote ``foto_cand2026_<UF>_div`` no padrão
     ``F<UF><SQ_CANDIDATO>_div.jpg``.
+
+    ``directory`` participa da chave do cache: sem ele, um diretório de
+    fixture de teste reaproveitaria o índice do diretório real.
     """
     index: dict[str, str] = {}
 
-    if not DATA_DIR.is_dir():
+    base = Path(directory)
+
+    if not base.is_dir():
         return index
 
-    for directory in sorted(DATA_DIR.glob("foto_cand*_div")):
-        if not directory.is_dir():
+    for photo_folder in sorted(base.glob("foto_cand*_div")):
+        if not photo_folder.is_dir():
             continue
 
-        for photo in sorted(directory.glob("*.jpg")):
+        for photo in sorted(photo_folder.glob("*.jpg")):
             # FSP250002530091_div.jpg -> 250002530091
             sequence = photo.stem[3:-4]
 
@@ -702,7 +741,7 @@ def load_photo_index() -> dict[str, str]:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def photo_data_uri(sequence: str) -> str:
+def photo_data_uri(sequence: str, directory: str) -> str:
     """Retorna a foto do candidato como data URI para usar em ``<img>``.
 
     Caminho local não funciona no navegador nem na folha impressa, então a
@@ -711,7 +750,7 @@ def photo_data_uri(sequence: str) -> str:
     if not sequence:
         return ""
 
-    photo = load_photo_index().get(sequence)
+    photo = load_photo_index(directory).get(sequence)
 
     if not photo:
         return ""
@@ -735,8 +774,13 @@ def photo_tag(candidate: dict, css_class: str, placeholder: str = "") -> str:
     return placeholder
 
 
-def get_config(key: str) -> dict:
-    return next(item for item in BALLOT_ORDER if item["key"] == key)
+def esc(value: object) -> str:
+    """Escapa texto do TSE antes de entrar em HTML.
+
+    Hoje nenhum campo da base contém ``<``, ``>`` ou ``&``, mas o escape é
+    barato e evita injeção de HTML se o TSE mudar a formatar algum nome.
+    """
+    return html.escape(str(value), quote=True)
 
 
 def cargo_matches(cargo: object, config: dict) -> bool:
@@ -852,7 +896,7 @@ def candidate_to_dict(row: pd.Series) -> dict:
         "cargo": str(row["cargo"]),
         "partido": str(row["partido"]),
         "situacao": str(row.get("situacao", "")),
-        "foto": photo_data_uri(sequence),
+        "foto": photo_data_uri(sequence, str(DATA_DIR)),
     }
 
 
@@ -886,7 +930,7 @@ def count_selected() -> int:
 def reset_selection() -> None:
     st.session_state.selected = {
         item["key"]: None
-        for item in BALLOT_ORDER
+        for item in BALLOT_ORDER_ACTIVE
     }
 
 
@@ -910,10 +954,10 @@ def candidate_html(candidate: dict) -> str:
 
     lines.append(
         "<div>"
-        f'<div class="candidate-number">{candidate["numero"]}</div>'
-        f'<div class="candidate-name">{candidate["nome"]}</div>'
-        f'<div class="candidate-meta">{candidate["partido"]} · '
-        f'{candidate["cargo"]}{situation}</div>'
+        f'<div class="candidate-number">{esc(candidate["numero"])}</div>'
+        f'<div class="candidate-name">{esc(candidate["nome"])}</div>'
+        f'<div class="candidate-meta">{esc(candidate["partido"])} · '
+        f'{esc(candidate["cargo"])}{esc(situation)}</div>'
         "</div>"
     )
     lines.append("</div>")
@@ -932,10 +976,10 @@ def render_selected_card(config: dict, candidate: dict) -> None:
     lines.extend(
         [
             "<div>",
-            f"<div>{config['label']}</div>",
-            f'<div class="selected-number">{candidate["numero"]}</div>',
-            f'<div><strong>{candidate["nome"]}</strong></div>',
-            f'<div>{candidate["partido"]}</div>',
+            f"<div>{esc(config['label'])}</div>",
+            f'<div class="selected-number">{esc(candidate["numero"])}</div>',
+            f'<div><strong>{esc(candidate["nome"])}</strong></div>',
+            f'<div>{esc(candidate["partido"])}</div>',
             "</div>",
         ]
     )
@@ -949,7 +993,7 @@ def render_selected_card(config: dict, candidate: dict) -> None:
 
 
 def render_review(selected: dict) -> None:
-    for index, config in enumerate(BALLOT_ORDER, start=1):
+    for index, config in enumerate(BALLOT_ORDER_ACTIVE, start=1):
         candidate = selected.get(config["key"]) or {}
 
         if candidate:
@@ -974,11 +1018,11 @@ def render_review(selected: dict) -> None:
             f'<div class="review-order">{index:02d}</div>',
             photo,
             "<div>",
-            f'<div class="review-cargo">{config["label"]}</div>',
-            f'<div class="review-name">{name}</div>',
-            f'<div class="candidate-meta">{party}</div>',
+            f'<div class="review-cargo">{esc(config["label"])}</div>',
+            f'<div class="review-name">{esc(name)}</div>',
+            f'<div class="candidate-meta">{esc(party)}</div>',
             "</div>",
-            f'<div class="review-number">{number}</div>',
+            f'<div class="review-number">{esc(number)}</div>',
             "</div>",
         ]
 
@@ -988,7 +1032,7 @@ def render_review(selected: dict) -> None:
 def build_print_card(selected: dict) -> str:
     items = []
 
-    for config in BALLOT_ORDER:
+    for config in BALLOT_ORDER_ACTIVE:
         candidate = selected.get(config["key"]) or {}
 
         if candidate:
@@ -1013,11 +1057,11 @@ def build_print_card(selected: dict) -> str:
                         f"{photo}</div>"
                     ),
                     "<div>",
-                    f'<div class="print-item-cargo">{config["label"]}</div>',
-                    f'<div class="print-item-name">{name}</div>',
-                    f'<div class="print-item-party">{party}</div>',
+                    f'<div class="print-item-cargo">{esc(config["label"])}</div>',
+                    f'<div class="print-item-name">{esc(name)}</div>',
+                    f'<div class="print-item-party">{esc(party)}</div>',
                     "</div>",
-                    f'<div class="print-item-number">{number}</div>',
+                    f'<div class="print-item-number">{esc(number)}</div>',
                     "</div>",
                 ]
             )
@@ -1029,8 +1073,8 @@ def build_print_card(selected: dict) -> str:
 
     return f"""
     <div class="print-card">
-        <div class="print-card-title">COLA ELEITORAL 2026</div>
-        <div class="print-card-subtitle">SÃO PAULO · 1º TURNO</div>
+        <div class="print-card-title">COLA ELEITORAL {ELECTION_CONFIG['year']}</div>
+        <div class="print-card-subtitle">SÃO PAULO · {ROUND_LABEL.upper()}</div>
         {items_html}
         <div class="print-footer">
             Confira na urna o número, nome, foto, cargo e sigla partidária
@@ -1088,7 +1132,8 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="app-subtitle">São Paulo · Monte sua cola pessoal para o 1º turno</div>',
+    '<div class="app-subtitle">São Paulo · Monte sua cola pessoal para o '
+    f'{ROUND_LABEL}</div>',
     unsafe_allow_html=True,
 )
 
@@ -1201,7 +1246,7 @@ if page == "1. Montar cola":
         "compatíveis com o cargo selecionado."
     )
 
-    for position_index, config in enumerate(BALLOT_ORDER, start=1):
+    for position_index, config in enumerate(BALLOT_ORDER_ACTIVE, start=1):
         st.markdown(
             f"### {position_index}. {config['label']}"
         )
@@ -1293,7 +1338,7 @@ if page == "1. Montar cola":
         )
 
     st.success(
-        f"{count_selected()} de {len(BALLOT_ORDER)} posições preenchidas."
+        f"{count_selected()} de {len(BALLOT_ORDER_ACTIVE)} posições preenchidas."
     )
 
 
@@ -1319,9 +1364,9 @@ if page == "2. Revisar":
 
     filled = count_selected()
 
-    if filled < len(BALLOT_ORDER):
+    if filled < len(BALLOT_ORDER_ACTIVE):
         st.info(
-            f"Você preencheu {filled} de {len(BALLOT_ORDER)} posições. "
+            f"Você preencheu {filled} de {len(BALLOT_ORDER_ACTIVE)} posições. "
             "É possível imprimir uma cola incompleta."
         )
 
