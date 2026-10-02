@@ -290,160 +290,6 @@ st.markdown(
         letter-spacing: 0.08em;
     }
 
-    .print-sheet {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: 1fr 1fr;
-        width: 210mm;
-        height: 297mm;
-        margin: 0 auto;
-        background: white;
-    }
-
-    .print-card {
-        width: 105mm;
-        height: 148.5mm;
-        box-sizing: border-box;
-        border: 0.4mm dashed #888;
-        padding: 7mm;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        background: white;
-        color: #111;
-    }
-
-    .print-card-title {
-        font-size: 12pt;
-        font-weight: 900;
-        text-align: center;
-        margin-bottom: 1mm;
-    }
-
-    .print-card-subtitle {
-        font-size: 7.5pt;
-        text-align: center;
-        color: #555;
-        margin-bottom: 4mm;
-    }
-
-    .print-item {
-        display: grid;
-        grid-template-columns: 9mm 1fr auto;
-        gap: 3mm;
-        align-items: center;
-        border-bottom: 0.25mm solid #ddd;
-        padding: 2.4mm 0;
-    }
-
-    .print-item-photo-slot {
-        width: 9mm;
-    }
-
-    .print-item-photo {
-        display: block;
-        height: 11mm;
-        width: auto;
-        object-fit: cover;
-        border: 0.2mm solid #ccc;
-        background: #eee;
-    }
-
-    .print-item-cargo {
-        font-size: 7pt;
-        text-transform: uppercase;
-        font-weight: 700;
-        color: #555;
-    }
-
-    .print-item-name {
-        font-size: 7.3pt;
-        font-weight: 700;
-        max-width: 55mm;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .print-item-party {
-        font-size: 6.5pt;
-        color: #555;
-    }
-
-    .print-item-number {
-        font-size: 18pt;
-        font-weight: 900;
-        letter-spacing: 0.05em;
-    }
-
-    .print-footer {
-        margin-top: auto;
-        font-size: 5.8pt;
-        line-height: 1.25;
-        color: #555;
-        padding-top: 3mm;
-    }
-
-    @media print {
-        @page {
-            size: A4 portrait;
-            margin: 0;
-        }
-
-        html, body {
-            width: 210mm;
-            height: 297mm;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-        }
-
-        body * {
-            visibility: hidden !important;
-        }
-
-        .print-area,
-        .print-area * {
-            visibility: visible !important;
-        }
-
-        .print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 210mm !important;
-            height: 297mm !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        .print-sheet {
-            display: grid !important;
-            width: 210mm !important;
-            height: 297mm !important;
-            margin: 0 !important;
-        }
-
-        .print-card {
-            width: 105mm !important;
-            height: 148.5mm !important;
-        }
-    }
-
-    @media screen and (max-width: 700px) {
-        .print-sheet {
-            width: 100%;
-            height: auto;
-            grid-template-columns: 1fr;
-            grid-template-rows: repeat(4, auto);
-        }
-
-        .print-card {
-            width: 100%;
-            height: auto;
-            min-height: 300px;
-        }
-    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -1084,18 +930,249 @@ def build_print_card(selected: dict) -> str:
     """.strip()
 
 
-def render_print_area(selected: dict) -> None:
-    card = build_print_card(selected)
+# CSS do documento de pré-visualização: a folha mora num HTML novo, aberto
+# em outra aba, sem nenhum elemento do Streamlit em volta — é isso que
+# garante a folha exatamente na página inteira, em 100%.
+PRINT_CSS = """
+    @page { size: A4 portrait; margin: 0; }
 
-    # Usa st.html em vez de st.markdown: as linhas em branco geradas pelas
-    # interpolações faziam o Markdown encerrar o bloco HTML e o restante da
-    # folha era impresso como código, exibindo as tags literalmente.
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; padding: 0; }
+
+    body {
+        background: #eceff1;
+        color: #111;
+        font-family: "Source Sans Pro", "Segoe UI", sans-serif;
+    }
+
+    .preview-bar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 10px 16px;
+        background: #1e1e1e;
+    }
+
+    .preview-bar button {
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 18px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .preview-print { background: #ff4b4b; color: #fff; }
+
+    .preview-close { background: #555; color: #fff; }
+
+    .preview-hint {
+        font-size: 12.5px;
+        color: #ddd;
+    }
+
+    .print-sheet {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        width: 210mm;
+        height: 297mm;
+        margin: 12mm auto;
+        background: #fff;
+        box-shadow: 0 3px 16px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+    }
+
+    .print-card {
+        width: 105mm;
+        height: 148.5mm;
+        box-sizing: border-box;
+        border: 0.4mm dashed #888;
+        padding: 7mm;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: white;
+        color: #111;
+    }
+
+    .print-card-title {
+        font-size: 12pt;
+        font-weight: 900;
+        text-align: center;
+        margin-bottom: 1mm;
+    }
+
+    .print-card-subtitle {
+        font-size: 7.5pt;
+        text-align: center;
+        color: #555;
+        margin-bottom: 4mm;
+    }
+
+    .print-item {
+        display: grid;
+        grid-template-columns: 9mm 1fr auto;
+        gap: 3mm;
+        align-items: center;
+        border-bottom: 0.25mm solid #ddd;
+        padding: 2.4mm 0;
+    }
+
+    .print-item-photo-slot {
+        width: 9mm;
+    }
+
+    .print-item-photo {
+        display: block;
+        height: 11mm;
+        width: auto;
+        object-fit: cover;
+        border: 0.2mm solid #ccc;
+        background: #eee;
+    }
+
+    .print-item-cargo {
+        font-size: 7pt;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #555;
+    }
+
+    .print-item-name {
+        font-size: 7.3pt;
+        font-weight: 700;
+        max-width: 55mm;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .print-item-party {
+        font-size: 6.5pt;
+        color: #555;
+    }
+
+    .print-item-number {
+        font-size: 18pt;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+    }
+
+    .print-footer {
+        margin-top: auto;
+        font-size: 5.8pt;
+        line-height: 1.25;
+        color: #555;
+        padding-top: 3mm;
+    }
+
+    @media print {
+        body { background: #fff; overflow: hidden; }
+
+        .preview-bar { display: none !important; }
+
+        .print-sheet {
+            margin: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .print-card { break-inside: avoid; }
+    }
+"""
+
+PREVIEW_BUTTON_HTML = """
+<div>
+  <button id="cola-preview-btn" style="
+      display: inline-block;
+      background: #ff4b4b;
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 22px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  ">Abrir pré-visualização de impressão (aba nova, 100%)</button>
+</div>
+<script>
+  // O documento inteiro vem em base64: nenhum caractere especial consegue
+  // quebrar este bloco de script.
+  const COLA_DOC_B64 = "__COLA_DOC__";
+
+  function colaAbrirPreview() {
+    const bytes = Uint8Array.from(atob(COLA_DOC_B64), (c) => c.charCodeAt(0));
+    const documento = new TextDecoder("utf-8").decode(bytes);
+    const url = URL.createObjectURL(
+      new Blob([documento], { type: "text/html;charset=utf-8" })
+    );
+    const win = window.open(url, "_blank");
+
+    if (!win) {
+      alert(
+        "O navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo."
+      );
+    }
+
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
+
+  document
+    .getElementById("cola-preview-btn")
+    .addEventListener("click", colaAbrirPreview);
+</script>
+"""
+
+
+def build_preview_document(selected: dict) -> str:
+    """Documento HTML autônomo da folha, para abrir em outra aba."""
+    card = build_print_card(selected)
+    sheet = "\n".join([card] * 4)
+
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="pt-BR">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        f"<title>Cola Eleitoral {YEAR} — impressão</title>\n"
+        f"<style>{PRINT_CSS}</style>\n"
+        "</head>\n"
+        "<body>\n"
+        '<div class="preview-bar">\n'
+        '<button class="preview-print" onclick="window.print()">'
+        "Imprimir</button>\n"
+        '<button class="preview-close" onclick="window.close()">'
+        "Fechar aba</button>\n"
+        '<span class="preview-hint">'
+        "A4 retrato · escala 100% · margens padrão ou mínimas · "
+        "cabeçalhos e rodapés desativados.\n"
+        "</span>\n"
+        "</div>\n"
+        f'<div class="print-sheet">\n{sheet}\n</div>\n'
+        "</body>\n"
+        "</html>\n"
+    )
+
+
+def render_print_area(selected: dict) -> None:
+    """Exibe o botão que abre a folha num documento novo em outra aba.
+
+    O preview fica isolado da interface do Streamlit: sem chrome, sem
+    layout deslocado e exatamente 100%, então a folha sai em uma página só.
+    """
+    payload = base64.b64encode(
+        build_preview_document(selected).encode("utf-8")
+    ).decode("ascii")
+
     st.html(
-        '<div class="print-area">'
-        '<div class="print-sheet">'
-        + "\n".join([card] * 4)
-        + "</div>"
-        "</div>"
+        PREVIEW_BUTTON_HTML.replace("__COLA_DOC__", payload),
+        unsafe_allow_javascript=True,
     )
 
 
@@ -1398,26 +1475,12 @@ if page == "3. Imprimir":
 
     st.markdown(
         """
-        A folha será configurada como A4 retrato com quatro cópias iguais.
-        Cada cartão ocupa aproximadamente 1/4 da folha.
-        """
-    )
+        A folha tem quatro cópias iguais da cola em A4 retrato.
 
-    st.markdown(
+        O botão abaixo abre a prévia em uma **nova aba**, fora da interface
+        do aplicativo e em tamanho real (100%) — é a partir dessa aba que
+        a folha sai correta, em uma página só.
         """
-        <div class="print-area">
-            <div style="
-                border: 1px solid #ddd;
-                border-radius: 10px;
-                padding: 10px;
-                background: #f7f7f7;
-            ">
-                Prévia visual abaixo. Use o comando de impressão do navegador
-                para imprimir a folha.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
     )
 
     render_print_area(st.session_state.selected)
@@ -1426,29 +1489,19 @@ if page == "3. Imprimir":
 
     st.markdown(
         """
-        **Configuração recomendada da impressora**
+        **Configuração recomendada (dentro da nova aba)**
 
-        Papel: A4  
-        Orientação: Retrato  
-        Escala: 100%  
-        Cabeçalhos e rodapés: desativados
-        """
-    )
+        - Papel: A4
+        - Orientação: Retrato
+        - Escala: 100%
+        - Margens: padrão ou mínimas
+        - Cabeçalhos e rodapés: desativados
 
-    st.markdown(
+        Use o botão **Imprimir** da própria aba, ou Ctrl+P no Windows/Linux
+        ou Cmd+P no macOS. No celular, use a opção de impressão do navegador
+        **dentro da nova aba** — imprimir a partir da tela do aplicativo não
+        gera a folha correta.
         """
-        <div style="
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 12px;
-            background: #fff;
-        ">
-            <strong>Como imprimir</strong><br>
-            Use Ctrl+P no Windows/Linux ou Cmd+P no macOS.
-            No celular, use a opção de impressão/compartilhamento do navegador.
-        </div>
-        """,
-        unsafe_allow_html=True,
     )
 
 

@@ -5,6 +5,8 @@ rede e nada da base real. O app lê ``COLA_DATA_DIR`` na hora de executar o
 script, então basta apontar a variável antes de cada teste.
 """
 
+import base64
+import re
 from pathlib import Path
 
 import pytest
@@ -52,16 +54,33 @@ def _valor(elemento) -> str:
     return valor if isinstance(valor, str) else str(valor)
 
 
+def _blocos(at: AppTest, tipo: str) -> list[str]:
+    try:
+        return [_valor(b) for b in at.get(tipo)]
+    except (KeyError, ValueError, AttributeError):
+        return []
+
+
 def markdowns(at: AppTest) -> str:
     """Todo o HTML emitido por ``st.markdown`` (resultados e revisão)."""
     return "\n".join(_valor(m) for m in at.markdown)
 
 
-def folha(at: AppTest) -> str:
-    """O conteúdo de ``st.html`` (folha de impressão), se houver."""
-    try:
-        blocos = [_valor(b) for b in at.get("html")]
-    except (KeyError, ValueError, AttributeError):
-        blocos = []
+def html_bruto(at: AppTest) -> str:
+    """Todo o conteúdo de ``st.html`` (botão da prévia de impressão)."""
+    return "\n".join(_blocos(at, "html"))
 
-    return "\n".join(blocos) or markdowns(at)
+
+# A folha de impressão viaja para a aba nova em base64 dentro de um script.
+_DOC_B64_PATTERN = re.compile(r'const COLA_DOC_B64 = "([A-Za-z0-9+/=]+)"')
+
+
+def folha(at: AppTest) -> str:
+    """O documento HTML da folha que a aba nova vai imprimir."""
+    for bloco in _blocos(at, "html"):
+        match = _DOC_B64_PATTERN.search(_valor(bloco))
+
+        if match:
+            return base64.b64decode(match.group(1)).decode("utf-8")
+
+    return markdowns(at)

@@ -3,6 +3,7 @@
 from conftest import (
     DAMAGED_DATA_DIR,
     folha,
+    html_bruto,
     iniciar,
     markdowns,
     pesquisar,
@@ -135,7 +136,12 @@ def test_cola_completa_vai_para_impressao():
 
     assert at.radio[0].value == "3. Imprimir"
 
+    # O botão da prévia existe e carrega o documento da aba nova.
+    assert "cola-preview-btn" in html_bruto(at)
+
     impressao = folha(at)
+    assert impressao.startswith("<!DOCTYPE html>")
+    assert "@page { size: A4 portrait; margin: 0; }" in impressao
     assert impressao.count('class="print-card"') == 4
     assert impressao.count('class="print-item"') == 24
     assert impressao.count("data:image/jpeg;base64,") == 4

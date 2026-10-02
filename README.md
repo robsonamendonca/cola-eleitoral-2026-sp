@@ -185,7 +185,11 @@ O mesmo candidato não pode ser selecionado nas duas vagas.
 
 ## Impressão
 
-A impressão foi projetada para uma folha A4 em retrato.
+A impressão foi separada da tela do aplicativo: a aba **3. Imprimir** tem o
+botão **Abrir pré-visualização de impressão**, que abre a folha em uma **nova
+aba**, em um documento HTML isolado da interface do Streamlit e em tamanho
+real (100%). É a partir dessa aba que a folha sai correta — imprimir a
+partir da tela do aplicativo não gera a folha.
 
 Cada folha contém quatro cópias iguais da cola:
 
@@ -201,7 +205,8 @@ Cada folha contém quatro cópias iguais da cola:
 
 Cada cartão tem aproximadamente 105 mm × 148,5 mm.
 
-A configuração do navegador deve ser:
+Na nova aba, use o botão **Imprimir** da própria aba (ou Ctrl+P no
+Windows/Linux, Cmd+P no macOS) com a configuração:
 
 - papel A4;
 - orientação retrato;
@@ -234,6 +239,8 @@ base pequena em `tests/fixtures/` (nada de rede e nada da base real) e cobrem:
 - bloqueio do mesmo senador nas duas vagas;
 - fluxo completo das 6 posições até a revisão e a folha impressa
   (4 cartões, fotos em base64 e cabeçalho `SÃO PAULO · 1º TURNO`);
+- documento da prévia em nova aba (A4 com `@page`, 4 cartões e botão
+  embutido em base64) — impresso com Chrome headless, sai em 1 página só;
 - aviso quando a base carregada está sem acentos (encoding errado).
 
 Para rodar:
@@ -264,7 +271,8 @@ Depois de iniciar o aplicativo:
 - [ ] Presidente é filtrado corretamente, sem vice.
 - [ ] A foto do candidato aparece na busca, na revisão e na folha impressa.
 - [ ] A revisão mostra os seis cargos na ordem da urna.
-- [ ] A impressão mostra quatro cópias.
+- [ ] O botão da prévia abre em uma nova aba.
+- [ ] A impressão mostra quatro cópias em uma única página A4.
 - [ ] A página impressa fica em A4.
 - [ ] Os botões e a interface do Streamlit não aparecem na impressão.
 
