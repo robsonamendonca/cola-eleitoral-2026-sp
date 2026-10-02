@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.pytest_cache/
 data/*.csv
 data/*.zip
 .streamlit/secrets.toml
