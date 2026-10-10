@@ -1177,6 +1177,69 @@ def render_print_area(selected: dict) -> None:
 
 
 # ============================================================
+# 2º TURNO — 25/10/2026 (SP volta à urna só para presidente)
+# ============================================================
+
+# Números das duas chapas classificadas para a segunda volta da
+# Presidência. Em São Paulo nenhum outro cargo é resubmetido.
+SECOND_ROUND_PRESIDENT_NUMBERS = ["13", "22"]
+
+SECOND_ROUND_CONFIG = {
+    "uf": "BR",
+    "cargo_terms": ["PRESIDENTE"],
+    "digits": 2,
+}
+
+
+def second_round_candidates() -> pd.DataFrame:
+    """As duas candidaturas a Presidente do 2º turno, em ordem de número."""
+    candidates = filter_for_position(candidates_df, SECOND_ROUND_CONFIG)
+
+    candidates = candidates[
+        candidates["numero"].isin(SECOND_ROUND_PRESIDENT_NUMBERS)
+    ].copy()
+
+    return candidates.sort_values("numero")
+
+
+@st.dialog("2º turno — Presidente (25/10/2026)", width="wide")
+def show_second_round() -> None:
+    """Mostra somente as duas chapas do Executivo Federal.
+
+    A segunda volta não repete deputados, senadores nem governador:
+    a tela abaixo é informativa e não monta cola (PRD §41).
+    """
+    st.markdown(
+        """
+        No dia **25 de outubro** o eleitor de São Paulo volta às urnas
+        **apenas** para **Presidente da República** — deputados, senadores
+        e governador já foram definidos no dia 4 de outubro.
+        """
+    )
+
+    candidates = second_round_candidates()
+
+    if candidates.empty:
+        st.warning(
+            "As candidaturas do 2º turno não foram encontradas na base "
+            "carregada. Verifique o arquivo `data/candidatos_2026.csv`."
+        )
+        return
+
+    for _, row in candidates.iterrows():
+        st.markdown(
+            candidate_html(candidate_to_dict(row)),
+            unsafe_allow_html=True,
+        )
+
+    st.caption(
+        "Somente as duas chapas classificadas disputam a segunda volta. "
+        "Esta tela não recomenda nem ordena candidatos — confira sempre "
+        "número, nome, foto e partido na tela da urna."
+    )
+
+
+# ============================================================
 # ESTADO
 # ============================================================
 
@@ -1256,6 +1319,12 @@ if base_danificada(candidates_df):
         "recuperado: recopie o CSV oficial do TSE "
         "(consulta_cand_2026_SP.csv e consulta_cand_2026_BR.csv)."
     )
+
+if st.button(
+    "Ver as 2 opções do 2º turno — Presidente (25/10)",
+    use_container_width=True,
+):
+    show_second_round()
 
 
 # ============================================================
